@@ -1,4 +1,4 @@
-# Voice → Obsidian (Dropbox)
+# transcribator3000
 
 Telegram-бот на Python: принимает голосовые, транскрибирует через OpenAI Whisper API и сохраняет `.md` в Dropbox.
 
@@ -13,9 +13,9 @@ Telegram → VPS (Python bot) → OpenAI Whisper API → Dropbox
 ## Локальная разработка
 
 ```bash
-cp .env.example .env   # заполнить токены локально
-pip install -r requirements.txt
-cd bot && python main.py
+cp .env.example .env
+poetry install
+poetry run python bot/main.py
 ```
 
 ## Git и деплой
@@ -24,10 +24,10 @@ cd bot && python main.py
 
 ```bash
 ssh root@94.249.203.188
-git clone <URL_РЕПОЗИТОРИЯ> /opt/voice-to-obsidian
+git clone https://github.com/HachHQ/transcribator3000.git /opt/transcribator3000
 cp .env.example /root/.env
 nano /root/.env
-cd /opt/voice-to-obsidian && docker compose up -d --build
+cd /opt/transcribator3000 && docker compose up -d --build
 ```
 
 ### Обновление после `git push`
@@ -35,13 +35,13 @@ cd /opt/voice-to-obsidian && docker compose up -d --build
 На сервере:
 
 ```bash
-ssh root@94.249.203.188 "/opt/voice-to-obsidian/deploy/update.sh"
+ssh root@94.249.203.188 "/opt/transcribator3000/deploy/update.sh"
 ```
 
 Или вручную:
 
 ```bash
-cd /opt/voice-to-obsidian
+cd /opt/transcribator3000
 git pull
 docker compose up -d --build
 ```

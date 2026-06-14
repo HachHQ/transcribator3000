@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-cd /opt/voice-to-obsidian
+cd /opt/transcribator3000
 
 git pull --ff-only
 docker compose up -d --build

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_DIR="${APP_DIR:-/opt/voice-to-obsidian}"
+APP_DIR="${APP_DIR:-/opt/transcribator3000}"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "Installing Docker..."

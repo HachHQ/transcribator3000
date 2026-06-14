@@ -2,12 +2,12 @@
 set -euo pipefail
 
 HOST="${DEPLOY_HOST:-root@94.249.203.188}"
-REMOTE_DIR="/opt/voice-to-obsidian"
+REMOTE_DIR="/opt/transcribator3000"
 LOCAL_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 echo "==> Copying project to $HOST:$REMOTE_DIR"
 ssh "$HOST" "mkdir -p $REMOTE_DIR"
-scp -r "$LOCAL_DIR/bot" "$LOCAL_DIR/Dockerfile" "$LOCAL_DIR/docker-compose.yml" "$LOCAL_DIR/requirements.txt" "$HOST:$REMOTE_DIR/"
+scp -r "$LOCAL_DIR/bot" "$LOCAL_DIR/Dockerfile" "$LOCAL_DIR/docker-compose.yml" "$LOCAL_DIR/pyproject.toml" "$LOCAL_DIR/poetry.lock" "$HOST:$REMOTE_DIR/"
 
 if [[ -f "$LOCAL_DIR/.env" ]]; then
   echo "==> Uploading .env"
@@ -19,7 +19,7 @@ fi
 echo "==> Installing Docker (if needed) and starting bot"
 ssh "$HOST" bash -s <<'REMOTE'
 set -euo pipefail
-cd /opt/voice-to-obsidian
+cd /opt/transcribator3000
 
 if ! command -v docker >/dev/null 2>&1; then
   curl -fsSL https://get.docker.com | sh
