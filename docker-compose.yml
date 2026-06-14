@@ -1,0 +1,8 @@
+services:
+  voice-bot:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - /root/.env
+    mem_limit: 256m
+    cpus: 0.5
