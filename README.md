@@ -18,6 +18,40 @@ poetry install
 poetry run python bot/main.py
 ```
 
+## GitHub Actions (CI/CD)
+
+При каждом **push** и **pull request** в `main`:
+
+1. **Test** — `poetry check`, проверка синтаксиса, сборка Docker-образа
+2. **Deploy** — только после успешного теста на `main`: `git pull` + `docker compose up` на VPS
+
+### Одноразовая настройка
+
+**1. SSH-ключ для GitHub Actions** (на вашем ПК):
+
+```bash
+bash deploy/setup-github-actions-ssh.sh
+```
+
+**2. Публичный ключ** — добавить на VPS в `~/.ssh/authorized_keys`
+
+**3. Secrets** в репозитории GitHub:  
+https://github.com/HachHQ/transcribator3000/settings/secrets/actions
+
+| Secret | Значение |
+|---|---|
+| `VPS_HOST` | `94.249.203.188` |
+| `VPS_USER` | `root` |
+| `VPS_SSH_KEY` | приватный ключ из шага 1 |
+
+**4. Проверка** — вкладка **Actions** на GitHub после `git push`
+
+### Ручной деплой (если CI/CD не нужен)
+
+```bash
+ssh root@94.249.203.188 "/opt/transcribator3000/deploy/update.sh"
+```
+
 ## Git и деплой
 
 ### Первичная настройка на VPS
@@ -51,7 +85,7 @@ docker compose up -d --build
 Править только `/root/.env`, затем:
 
 ```bash
-cd /opt/voice-to-obsidian && docker compose restart
+cd /opt/transcribator3000 && docker compose restart
 ```
 
 ## Переменные окружения
