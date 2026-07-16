@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   test:
@@ -40,19 +41,52 @@ jobs:
   deploy:
     name: Deploy
     needs: test
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy to VPS
-        uses: appleboy/ssh-action@v1.2.2
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Copy project to VPS
+        uses: appleboy/scp-action@v1.0.0
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          source: "bot,Dockerfile,docker-compose.yml,pyproject.toml,poetry.lock"
+          target: /opt/transcribator3000
+          strip_components: 0
+
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1.2.2
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          DROPBOX_APP_KEY: ${{ secrets.DROPBOX_APP_KEY }}
+          DROPBOX_APP_SECRET: ${{ secrets.DROPBOX_APP_SECRET }}
+          DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
+          DROPBOX_VAULT_PATH: ${{ secrets.DROPBOX_VAULT_PATH }}
+          WHISPER_LANGUAGE: ${{ secrets.WHISPER_LANGUAGE }}
+          TIMEZONE: ${{ secrets.TIMEZONE }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          envs: TELEGRAM_BOT_TOKEN,OPENAI_API_KEY,DROPBOX_APP_KEY,DROPBOX_APP_SECRET,DROPBOX_REFRESH_TOKEN,DROPBOX_VAULT_PATH,WHISPER_LANGUAGE,TIMEZONE
           script: |
             set -euo pipefail
+            {
+              echo "TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}"
+              echo "OPENAI_API_KEY=${OPENAI_API_KEY}"
+              echo "DROPBOX_APP_KEY=${DROPBOX_APP_KEY}"
+              echo "DROPBOX_APP_SECRET=${DROPBOX_APP_SECRET}"
+              echo "DROPBOX_REFRESH_TOKEN=${DROPBOX_REFRESH_TOKEN}"
+              echo "DROPBOX_VAULT_PATH=${DROPBOX_VAULT_PATH:-/Obsidian/MyVault}"
+              echo "WHISPER_LANGUAGE=${WHISPER_LANGUAGE:-ru}"
+              echo "TIMEZONE=${TIMEZONE:-Asia/Bangkok}"
+            } > /root/.env
+            chmod 600 /root/.env
             cd /opt/transcribator3000
-            git pull --ff-only
             docker compose up -d --build
             docker compose ps
             docker compose logs --tail=20 voice-bot
