@@ -19,9 +19,15 @@ echo
 echo "=== 2. Добавьте secrets в GitHub ==="
 echo "Repository → Settings → Secrets and variables → Actions → New repository secret"
 echo
-echo "  VPS_HOST     = 94.249.203.188"
+echo "  VPS_HOST     = IP вашего VPS (например 5.175.161.26)"
 echo "  VPS_USER     = root"
 echo "  VPS_SSH_KEY  = содержимое файла ${KEY_PATH} (приватный ключ)"
+echo "  + все переменные из .env.example (токены бота, OpenAI, Dropbox)"
+echo
+echo "Быстрая загрузка всех secrets из локального .env:"
+echo "  bash deploy/set-github-secrets.sh"
+echo
+echo "Или вручную: Settings → Secrets and variables → Actions → Repository secrets"
 echo
 echo "Приватный ключ:"
 echo "----------------"
