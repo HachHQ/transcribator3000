@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      dropbox_vault_path:
+        description: Dropbox vault path in cloud (e.g. /Obsidian/MyVault)
+        required: false
+        default: /Obsidian/MyVault
+        type: string
 
 jobs:
   test:
@@ -65,7 +71,7 @@ jobs:
           DROPBOX_APP_KEY: ${{ secrets.DROPBOX_APP_KEY }}
           DROPBOX_APP_SECRET: ${{ secrets.DROPBOX_APP_SECRET }}
           DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
-          DROPBOX_VAULT_PATH: ${{ secrets.DROPBOX_VAULT_PATH }}
+          DROPBOX_VAULT_PATH: ${{ inputs.dropbox_vault_path || secrets.DROPBOX_VAULT_PATH }}
           WHISPER_LANGUAGE: ${{ secrets.WHISPER_LANGUAGE }}
           TIMEZONE: ${{ secrets.TIMEZONE }}
         with:
@@ -75,15 +81,16 @@ jobs:
           envs: TELEGRAM_BOT_TOKEN,OPENAI_API_KEY,DROPBOX_APP_KEY,DROPBOX_APP_SECRET,DROPBOX_REFRESH_TOKEN,DROPBOX_VAULT_PATH,WHISPER_LANGUAGE,TIMEZONE
           script: |
             set -euo pipefail
+            write_env() { printf '%s=%s\n' "$1" "$2"; }
             {
-              echo "TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}"
-              echo "OPENAI_API_KEY=${OPENAI_API_KEY}"
-              echo "DROPBOX_APP_KEY=${DROPBOX_APP_KEY}"
-              echo "DROPBOX_APP_SECRET=${DROPBOX_APP_SECRET}"
-              echo "DROPBOX_REFRESH_TOKEN=${DROPBOX_REFRESH_TOKEN}"
-              echo "DROPBOX_VAULT_PATH=${DROPBOX_VAULT_PATH:-/Obsidian/MyVault}"
-              echo "WHISPER_LANGUAGE=${WHISPER_LANGUAGE:-ru}"
-              echo "TIMEZONE=${TIMEZONE:-Asia/Bangkok}"
+              write_env TELEGRAM_BOT_TOKEN "${TELEGRAM_BOT_TOKEN}"
+              write_env OPENAI_API_KEY "${OPENAI_API_KEY}"
+              write_env DROPBOX_APP_KEY "${DROPBOX_APP_KEY}"
+              write_env DROPBOX_APP_SECRET "${DROPBOX_APP_SECRET}"
+              write_env DROPBOX_REFRESH_TOKEN "${DROPBOX_REFRESH_TOKEN}"
+              write_env DROPBOX_VAULT_PATH "${DROPBOX_VAULT_PATH:-/Obsidian/MyVault}"
+              write_env WHISPER_LANGUAGE "${WHISPER_LANGUAGE:-ru}"
+              write_env TIMEZONE "${TIMEZONE:-Asia/Bangkok}"
             } > /root/.env
             chmod 600 /root/.env
             cd /opt/transcribator3000

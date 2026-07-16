@@ -23,6 +23,17 @@ set_secret() {
     echo "skip $name (empty)"
     return
   fi
+  if [[ "$name" == "DROPBOX_VAULT_PATH" ]]; then
+    if [[ "$value" =~ ^[A-Za-z]:[/\\] ]] || [[ "$value" == *"Program Files"* ]]; then
+      echo "ERROR: DROPBOX_VAULT_PATH looks like a local Windows path: $value"
+      echo "Use a Dropbox cloud path, e.g. /Obsidian/MyVault"
+      exit 1
+    fi
+    if [[ "$value" != /* ]]; then
+      echo "ERROR: DROPBOX_VAULT_PATH must start with / (Dropbox cloud path)"
+      exit 1
+    fi
+  fi
   gh secret set "$name" --body "$value" -R "$REPO"
   echo "set $name"
 }
@@ -38,6 +49,10 @@ while IFS= read -r line || [[ -n "$line" ]]; do
 
   key="${line%%=*}"
   value="${line#*=}"
+  if [[ "$key" == "DROPBOX_VAULT_PATH" ]]; then
+    echo "skip $key (set via GitHub Secret or Actions → Run workflow input)"
+    continue
+  fi
   set_secret "$key" "$value"
 done < "$ENV_FILE"
 
@@ -50,6 +65,14 @@ fi
 
 read -r -p "VPS host IP [$REPO — press Enter to skip]: " VPS_HOST_INPUT
 if [[ -n "${VPS_HOST_INPUT:-}" ]]; then
+  VPS_HOST_INPUT="${VPS_HOST_INPUT#\[}"
+  VPS_HOST_INPUT="${VPS_HOST_INPUT%\]}"
+  VPS_HOST_INPUT="${VPS_HOST_INPUT#*@}"
+  if [[ ! "$VPS_HOST_INPUT" =~ ^[0-9a-zA-Z._-]+$ ]]; then
+    echo "ERROR: VPS_HOST looks invalid: $VPS_HOST_INPUT"
+    echo "Use only IP or hostname, e.g. 5.175.161.26"
+    exit 1
+  fi
   gh secret set VPS_HOST --body "$VPS_HOST_INPUT" -R "$REPO"
   echo "set VPS_HOST"
 fi
@@ -62,6 +85,11 @@ echo "set VPS_USER"
 echo
 echo "Done. Secrets: https://github.com/$REPO/settings/secrets/actions"
 echo
-echo "Note: this script does NOT start the deploy pipeline."
-echo "Trigger deploy with: git push origin main"
-echo "Or manually: https://github.com/$REPO/actions/workflows/ci-cd.yml → Run workflow"
+read -r -p "Run deploy workflow now? [Y/n]: " RUN_DEPLOY
+RUN_DEPLOY="${RUN_DEPLOY:-Y}"
+if [[ "$RUN_DEPLOY" =~ ^[Yy]$ ]]; then
+  gh workflow run ci-cd.yml -R "$REPO" --ref main
+  echo "Deploy started: https://github.com/$REPO/actions/workflows/ci-cd.yml"
+else
+  echo "Deploy manually: Actions → CI/CD → Run workflow"
+fi
