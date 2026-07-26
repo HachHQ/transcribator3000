@@ -6,12 +6,6 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
-    inputs:
-      dropbox_vault_path:
-        description: Dropbox vault path in cloud (e.g. /Obsidian/MyVault)
-        required: false
-        default: /Obsidian/MyVault
-        type: string
 
 jobs:
   test:
@@ -39,7 +33,10 @@ jobs:
         run: poetry check
 
       - name: Check Python syntax
-        run: python -m compileall bot
+        run: python -m compileall app alembic
+
+      - name: Unit tests
+        run: poetry run python -m unittest discover -s tests -p "test_*.py"
 
       - name: Build Docker image
         run: docker build -t transcribator3000:ci .
@@ -59,7 +56,7 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          source: "bot,Dockerfile,docker-compose.yml,pyproject.toml,poetry.lock"
+          source: "app,alembic,alembic.ini,Dockerfile,docker-compose.yml,pyproject.toml,poetry.lock,README.md,.env.example"
           target: /opt/transcribator3000
           strip_components: 0
 
@@ -68,35 +65,56 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
+          LLM_MODEL: ${{ secrets.LLM_MODEL }}
+          WHISPER_MODEL: ${{ secrets.WHISPER_MODEL }}
           DROPBOX_APP_KEY: ${{ secrets.DROPBOX_APP_KEY }}
           DROPBOX_APP_SECRET: ${{ secrets.DROPBOX_APP_SECRET }}
-          DROPBOX_REFRESH_TOKEN: ${{ secrets.DROPBOX_REFRESH_TOKEN }}
-          DROPBOX_VAULT_PATH: ${{ github.event.inputs.dropbox_vault_path || secrets.DROPBOX_VAULT_PATH || '/Obsidian/MyVault' }}
+          DROPBOX_REDIRECT_URI: ${{ secrets.DROPBOX_REDIRECT_URI }}
+          DROPBOX_VAULT_PATH: ${{ secrets.DROPBOX_VAULT_PATH }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_REDIRECT_URI: ${{ secrets.GOOGLE_REDIRECT_URI }}
+          TOKEN_ENCRYPTION_KEY: ${{ secrets.TOKEN_ENCRYPTION_KEY }}
+          PUBLIC_BASE_URL: ${{ secrets.PUBLIC_BASE_URL }}
           WHISPER_LANGUAGE: ${{ secrets.WHISPER_LANGUAGE }}
           TIMEZONE: ${{ secrets.TIMEZONE }}
+          NOTE_BODY_TTL_SECONDS: ${{ secrets.NOTE_BODY_TTL_SECONDS }}
+          AUDIO_CACHE_TTL_SECONDS: ${{ secrets.AUDIO_CACHE_TTL_SECONDS }}
+          NOTE_BODY_EXPIRE_AFTER_UPLOAD_SECONDS: ${{ secrets.NOTE_BODY_EXPIRE_AFTER_UPLOAD_SECONDS }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          envs: TELEGRAM_BOT_TOKEN,OPENAI_API_KEY,DROPBOX_APP_KEY,DROPBOX_APP_SECRET,DROPBOX_REFRESH_TOKEN,DROPBOX_VAULT_PATH,WHISPER_LANGUAGE,TIMEZONE
+          envs: TELEGRAM_BOT_TOKEN,OPENAI_API_KEY,OPENAI_BASE_URL,LLM_MODEL,WHISPER_MODEL,DROPBOX_APP_KEY,DROPBOX_APP_SECRET,DROPBOX_REDIRECT_URI,DROPBOX_VAULT_PATH,GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET,GOOGLE_REDIRECT_URI,TOKEN_ENCRYPTION_KEY,PUBLIC_BASE_URL,WHISPER_LANGUAGE,TIMEZONE,NOTE_BODY_TTL_SECONDS,AUDIO_CACHE_TTL_SECONDS,NOTE_BODY_EXPIRE_AFTER_UPLOAD_SECONDS
           script: |
             set -euo pipefail
-            if [[ "${DROPBOX_VAULT_PATH}" =~ ^[A-Za-z]: ]] || [[ "${DROPBOX_VAULT_PATH}" == *"Program Files"* ]]; then
-              DROPBOX_VAULT_PATH="/Obsidian/MyVault"
-            fi
             write_env() { printf '%s=%s\n' "$1" "$2"; }
             {
+              write_env DATABASE_URL "postgresql+asyncpg://vault:vault@postgres:5432/vault"
+              write_env REDIS_URL "redis://redis:6379/0"
               write_env TELEGRAM_BOT_TOKEN "${TELEGRAM_BOT_TOKEN}"
               write_env OPENAI_API_KEY "${OPENAI_API_KEY}"
+              write_env OPENAI_BASE_URL "${OPENAI_BASE_URL:-}"
+              write_env LLM_MODEL "${LLM_MODEL:-gpt-4o-mini}"
+              write_env WHISPER_MODEL "${WHISPER_MODEL:-whisper-1}"
               write_env DROPBOX_APP_KEY "${DROPBOX_APP_KEY}"
               write_env DROPBOX_APP_SECRET "${DROPBOX_APP_SECRET}"
-              write_env DROPBOX_REFRESH_TOKEN "${DROPBOX_REFRESH_TOKEN}"
+              write_env DROPBOX_REDIRECT_URI "${DROPBOX_REDIRECT_URI:-}"
               write_env DROPBOX_VAULT_PATH "${DROPBOX_VAULT_PATH:-/Obsidian/MyVault}"
+              write_env GOOGLE_CLIENT_ID "${GOOGLE_CLIENT_ID:-}"
+              write_env GOOGLE_CLIENT_SECRET "${GOOGLE_CLIENT_SECRET:-}"
+              write_env GOOGLE_REDIRECT_URI "${GOOGLE_REDIRECT_URI:-}"
+              write_env TOKEN_ENCRYPTION_KEY "${TOKEN_ENCRYPTION_KEY}"
+              write_env PUBLIC_BASE_URL "${PUBLIC_BASE_URL:-http://localhost:8000}"
               write_env WHISPER_LANGUAGE "${WHISPER_LANGUAGE:-ru}"
               write_env TIMEZONE "${TIMEZONE:-Asia/Bangkok}"
-            } > /root/.env
-            chmod 600 /root/.env
+              write_env NOTE_BODY_TTL_SECONDS "${NOTE_BODY_TTL_SECONDS:-259200}"
+              write_env AUDIO_CACHE_TTL_SECONDS "${AUDIO_CACHE_TTL_SECONDS:-3600}"
+              write_env NOTE_BODY_EXPIRE_AFTER_UPLOAD_SECONDS "${NOTE_BODY_EXPIRE_AFTER_UPLOAD_SECONDS:-3600}"
+            } > /opt/transcribator3000/.env
+            chmod 600 /opt/transcribator3000/.env
             cd /opt/transcribator3000
             docker compose up -d --build
             docker compose ps
-            docker compose logs --tail=20 voice-bot
+            docker compose logs --tail=30 api worker bot

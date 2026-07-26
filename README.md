@@ -1,135 +1,119 @@
-# transcribator3000
+# transcribator3000 (LLM Vault)
 
-Telegram-бот на Python: принимает голосовые, транскрибирует через OpenAI Whisper API и сохраняет `.md` в Dropbox.
+Multi-user Telegram + API продукт: голос → транскрипция → транзитный Redis-кэш → Dropbox, затем LLM-постобработка, классификация в Google Tasks/Calendar и ежедневная сводка менеджера.
 
 ## Архитектура
 
 ```
-Telegram → VPS (Python bot) → OpenAI Whisper API → Dropbox
+Telegram / API
+    → Postgres (users, oauth, note meta, jobs)
+    → Redis (note body/audio cache + arq queue)
+    → Workers: Whisper → Dropbox → LLM postprocess → classify
+    → Google Calendar / Tasks
 ```
 
-Секреты хранятся в **GitHub Actions Secrets** и при деплое автоматически записываются в `/root/.env` на сервере.
+Тело заметки **не хранится** в Postgres — только в Redis на время пайплайна (TTL), durable копия в Dropbox.
 
-## Локальная разработка
+## Сервисы (docker compose)
+
+| Service | Роль |
+|---|---|
+| `api` | FastAPI: `/health`, OAuth Google/Dropbox |
+| `worker` | arq jobs + daily_manager cron |
+| `bot` | Telegram polling |
+| `postgres` | метаданные |
+| `redis` | кэш + очередь |
+| `migrate` | Alembic upgrade |
+
+## Локальный запуск
 
 ```bash
 cp .env.example .env
+# заполните TELEGRAM_BOT_TOKEN, OPENAI_API_KEY, TOKEN_ENCRYPTION_KEY,
+# DROPBOX_*, GOOGLE_*, PUBLIC_BASE_URL
+
 poetry install
-poetry run python bot/main.py
+docker compose up -d postgres redis
+poetry run alembic upgrade head
+poetry run vault-api      # :8000
+poetry run vault-worker
+poetry run vault-bot
 ```
 
-## GitHub Actions (CI/CD)
-
-При каждом **push** и **pull request** в `main`:
-
-1. **Test** — `poetry check`, проверка синтаксиса, сборка Docker-образа
-2. **Deploy** — только после успешного теста на `main`: копирование файлов на VPS + запись `/root/.env` из secrets + `docker compose up`
-
-### Одноразовая настройка
-
-**1. SSH-ключ для GitHub Actions** (на вашем ПК):
+Или всё сразу:
 
 ```bash
-bash deploy/setup-github-actions-ssh.sh
+docker compose up -d --build
 ```
 
-**2. Публичный ключ** — добавить на VPS в `~/.ssh/authorized_keys`
+## OAuth (на пользователя)
 
-**3. Secrets** в репозитории GitHub:  
-https://github.com/HachHQ/transcribator3000/settings/secrets/actions
+`/start` и `/connections` показывают статус Dropbox/Google и кнопки (или текстовые ссылки).
 
-> **Где искать:** Settings → **Secrets and variables** → **Actions** → вкладка **Repository secrets** (не Variables, не Environment secrets).
+Redirect URI = `{PUBLIC_BASE_URL}/oauth/dropbox/callback` и `.../oauth/google/callback` — должны совпадать с консолями приложений.
 
-**Быстрая загрузка** — один раз заполнить локальный `.env`, затем:
+Токены шифруются (`TOKEN_ENCRYPTION_KEY`) в `oauth_credentials`.
 
-```bash
-cp .env.example .env   # если ещё нет
-nano .env
-bash deploy/set-github-secrets.sh
-```
+## Пайплайн заметки
 
-Скрипт зальёт все переменные из `.env` + спросит IP сервера и пользователя.
+`received → transcribing → cached → uploaded → postprocessing → classified → awaiting_confirmation? → done`
 
-| Secret | Значение |
-|---|---|
-| `VPS_HOST` | IP VPS, например `5.175.161.26` |
-| `VPS_USER` | `root` |
-| `VPS_SSH_KEY` | приватный ключ из шага 1 |
-| `TELEGRAM_BOT_TOKEN` | токен от @BotFather |
-| `OPENAI_API_KEY` | ключ OpenAI |
-| `DROPBOX_APP_KEY` | Dropbox app key |
-| `DROPBOX_APP_SECRET` | Dropbox app secret |
-| `DROPBOX_REFRESH_TOKEN` | Dropbox refresh token |
-| `DROPBOX_VAULT_PATH` | `/Obsidian/MyVault` |
-| `WHISPER_LANGUAGE` | `ru` (опционально) |
-| `TIMEZONE` | `Asia/Bangkok` (опционально) |
+Jobs: `transcribe` → `upload_note` → `postprocess_note` → `classify_task` → (кнопки) `apply_classification`.
 
-Обновить один secret вручную:
+Если LLM видит задачу/событие и Google подключён — бот пришлёт **Подтвердить / Пропустить**.  
+Без Google — заметка `done` + подсказка `/connections`.
 
-```bash
-gh secret set VPS_HOST --body "5.175.161.26" -R HachHQ/transcribator3000
-```
+## Daily brief
 
-**4. Проверка** — вкладка **Actions** на GitHub после `git push`
+- `/brief` — сводка на сегодня (Calendar conflicts + free windows + Tasks + LLM)
+- cron каждый час на `:05`; отправка в **локальный `brief_hour`** пользователя (по умолчанию 7), dedupe в Redis
+- `/settings`, `/setbriefhour 8`, `/settimezone Asia/Bangkok`
 
-### Ручной деплой (если CI/CD не нужен)
+## Smoke (Google-слой)
 
-```bash
-ssh root@5.175.161.26 "/opt/transcribator3000/deploy/update.sh"
-```
+1. `/connections` → подключить Google  
+2. Голосовое с задачей («завтра в 15:00 созвон…»)  
+3. Дождаться кнопок → Подтвердить → проверить Google Tasks/Calendar  
+4. `/brief` — получить сводку  
 
-## Git и деплой
+## Промпты агента
 
-### Первичная настройка на VPS
+Пользователь настраивает system prompt из бота:
 
-На сервере нужен только Docker — файлы и `/root/.env` доставляет GitHub Actions:
+- `/prompts` — текущие промпты (`notes`, `brief`, `classify`)
+- `/setprompt brief` → следующим сообщением новый текст
+- `/resetprompt notes` — сброс к дефолту
 
-```bash
-ssh root@5.175.161.26
-apt install -y docker-compose-v2   # если ещё нет
-mkdir -p /opt/transcribator3000
-```
+`notes` — постобработка транскрипта; `brief` — ежедневная сводка; `classify` — извлечение задач/событий.
 
-Дальше — `git push` в `main` (после настройки secrets).
+## LLM
 
-### Обновление после `git push`
-
-Автоматически через GitHub Actions. Или вручную на сервере:
-
-```bash
-ssh root@5.175.161.26 "/opt/transcribator3000/deploy/update.sh"
-```
-
-### Смена токенов
-
-Обновить secret в GitHub (`gh secret set ...`) и сделать `git push` в `main`, либо вручную:
-
-```bash
-nano /root/.env
-cd /opt/transcribator3000 && docker compose restart
-```
+Единый интерфейс `LLMProvider` (`complete` / `structured`).  
+По умолчанию OpenAI; для локального сервера задайте `OPENAI_BASE_URL` (Ollama/vLLM OpenAI-compatible).
 
 ## Переменные окружения
 
-См. `.env.example`. Обязательные:
+См. [`.env.example`](.env.example). Обязательные для полного цикла:
 
-- `TELEGRAM_BOT_TOKEN`
-- `OPENAI_API_KEY`
-- `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, `DROPBOX_REFRESH_TOKEN`
-- `DROPBOX_VAULT_PATH`
+- `TELEGRAM_BOT_TOKEN`, `OPENAI_API_KEY`, `TOKEN_ENCRYPTION_KEY`
+- `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`
+- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
+- `PUBLIC_BASE_URL`, `DATABASE_URL`, `REDIS_URL`
 
-## Формат заметок (GMT+7)
+## Структура
 
 ```
-/Obsidian/MyVault/2026-06/14/14-30-45.md
+app/
+  api/                 FastAPI
+  db/                  SQLAlchemy + models
+  domain/              enums, DTO
+  integrations/        llm, dropbox, google, telegram
+  pipelines/           статусы
+  services/            use-cases
+  workers/             arq jobs
+alembic/               миграции
 ```
 
-```markdown
-# 14:30:45
+## CI/CD
 
-Текст транскрипции...
-```
-
-## Ресурсы
-
-~256 MB RAM в Docker.
+Push в `main`: test (`compileall` + unittest + docker build) → deploy на VPS (`docker compose up`).

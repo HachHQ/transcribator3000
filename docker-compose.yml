@@ -1,8 +1,88 @@
 services:
-  voice-bot:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: vault
+      POSTGRES_PASSWORD: vault
+      POSTGRES_DB: vault
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vault -d vault"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  migrate:
+    build: .
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://vault:vault@postgres:5432/vault
+      REDIS_URL: redis://redis:6379/0
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
     build: .
     restart: unless-stopped
     env_file:
-      - /root/.env
-    mem_limit: 256m
-    cpus: 0.5
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://vault:vault@postgres:5432/vault
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    command: ["vault-api"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  worker:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://vault:vault@postgres:5432/vault
+      REDIS_URL: redis://redis:6379/0
+    command: ["vault-worker"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  bot:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://vault:vault@postgres:5432/vault
+      REDIS_URL: redis://redis:6379/0
+    command: ["vault-bot"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+
+volumes:
+  postgres_data:
