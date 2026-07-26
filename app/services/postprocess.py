@@ -44,10 +44,20 @@ async def postprocess_note(
     body = await cache.get_body(note_id)
     if body is None and note.dropbox_path:
         body = vault.download_text(note.dropbox_path)
-        # strip simple heading if present
+        # strip heading + optional note_id footer for LLM input
         lines = body.splitlines()
         if lines and lines[0].startswith("# "):
-            body = "\n".join(lines[2:]).strip() if len(lines) > 2 else body
+            lines = lines[2:] if len(lines) > 2 else []
+        # drop trailing --- / note_id footer
+        while lines and lines[-1].strip() == "":
+            lines.pop()
+        if lines and lines[-1].startswith("note_id:"):
+            lines.pop()
+            while lines and lines[-1].strip() == "":
+                lines.pop()
+            if lines and lines[-1].strip() == "---":
+                lines.pop()
+        body = "\n".join(lines).strip()
 
     if not body:
         raise RuntimeError("Note body unavailable in cache and Dropbox")
@@ -79,7 +89,9 @@ async def postprocess_note(
         from zoneinfo import ZoneInfo
 
         heading = datetime.now(ZoneInfo(settings.timezone)).strftime("%H:%M:%S")
-        content = f"# {heading}\n\n{edited}\n"
+        content = DropboxVault.format_note_markdown(
+            heading=heading, body=edited, note_id=note.id
+        )
         vault.upload_markdown(note.dropbox_path, content, overwrite=True)
 
     note.content_checksum = hashlib.sha256(edited.encode("utf-8")).hexdigest()

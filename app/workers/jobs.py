@@ -17,6 +17,7 @@ from app.db.models import Job, Note, User
 from app.db.session import get_session_factory, init_engine
 from app.domain.enums import NoteStatus
 from app.integrations.llm.factory import build_llm_provider, build_transcription_provider
+from app.integrations.storage.dropbox import DropboxVault
 from app.integrations.storage.note_cache import NoteCache
 from app.pipelines.status import transition_note
 from app.services.classify import (
@@ -175,9 +176,11 @@ async def upload_note(ctx: dict, note_id: str) -> None:
             user = await session.get(User, note.user_id)
             tz = ZoneInfo(user.timezone if user else settings.timezone)
             moment = datetime.now(tz)
-            path = vault.note_path(moment, user_namespace=str(note.user_id)[:8])
+            path = vault.note_path(moment)
             heading = moment.strftime("%H:%M:%S")
-            content = f"# {heading}\n\n{body}\n"
+            content = DropboxVault.format_note_markdown(
+                heading=heading, body=body, note_id=note.id
+            )
             vault.upload_markdown(path, content)
             note.dropbox_path = path
             transition_note(note, NoteStatus.UPLOADED)

@@ -36,15 +36,17 @@ class DropboxVault:
         self._timezone = ZoneInfo(timezone)
         self._max_attempts = max_attempts
 
-    def note_path(self, moment: datetime | None = None, user_namespace: str | None = None) -> str:
+    def note_path(self, moment: datetime | None = None) -> str:
+        """Vault layout: {vault}/{YYYY-MM}/{DD}/{HH-MM-SS}.md (no per-user folder)."""
         moment = moment or datetime.now(self._timezone)
         month = moment.strftime("%Y-%m")
         day = moment.strftime("%d")
         filename = f"{moment.strftime('%H-%M-%S')}.md"
-        base = self._vault_path
-        if user_namespace:
-            base = f"{base}/{user_namespace}"
-        return f"{base}/{month}/{day}/{filename}"
+        return f"{self._vault_path}/{month}/{day}/{filename}"
+
+    @staticmethod
+    def format_note_markdown(*, heading: str, body: str, note_id) -> str:
+        return f"# {heading}\n\n{body.strip()}\n\n---\nnote_id: `{note_id}`\n"
 
     def _with_retry(self, action: str, fn):
         delay = 1.0

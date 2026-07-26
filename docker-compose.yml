@@ -44,7 +44,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://vault:vault@postgres:5432/vault
       REDIS_URL: redis://redis:6379/0
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     command: ["vault-api"]
     depends_on:
       migrate:
